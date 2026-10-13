@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo build --release --target wasm32-wasip2
+
+  # The extension registry packages with Rust 1.90 and its own zed-extension CLI.
+  package:
+    runs-on: ubuntu-latest
+    env:
+      ZED_EXTENSION_CLI_SHA: 9ee3c503a4bbbc6b4a0f8a789acca4871d773223
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90
+        with:
+          targets: wasm32-wasip2
+      - run: |
+          wget -q "https://zed-extension-cli.nyc3.digitaloceanspaces.com/$ZED_EXTENSION_CLI_SHA/x86_64-unknown-linux-gnu/zed-extension"
+          chmod +x zed-extension
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/scratch"
+          ./zed-extension --source-dir . --output-dir "$RUNNER_TEMP/out" --scratch-dir "$RUNNER_TEMP/scratch"
+          cat "$RUNNER_TEMP/out/manifest.json"
+
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      ELIDE_VERSION: v1.6.0-rc.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Elide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$ELIDE_VERSION" -R elide-dev/elide -p elide.linux-amd64.txz -D "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/elide"
+          tar -xJf "$RUNNER_TEMP/elide.linux-amd64.txz" -C "$RUNNER_TEMP/elide"
+          rm "$RUNNER_TEMP/elide.linux-amd64.txz"
+          echo "ELIDE_BIN=$RUNNER_TEMP/elide/bin/elide" >> "$GITHUB_ENV"
+      - run: cargo test e2e -- --nocapture

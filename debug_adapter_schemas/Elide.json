@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "Launch",
+      "properties": {
+        "request": {
+          "type": "string",
+          "enum": ["launch"],
+          "description": "Start `elide run` (or `elide test`) with `--debugger=dap` and connect to it."
+        },
+        "program": {
+          "type": "string",
+          "description": "The JavaScript, TypeScript or Python file to run, relative to `cwd`."
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Arguments after `program`. Without `program`, these are passed to the Elide subcommand as-is."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Working directory. Defaults to the worktree root."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Extra environment variables."
+        },
+        "command": {
+          "type": "string",
+          "enum": ["run", "test"],
+          "default": "run",
+          "description": "Elide subcommand: `run` a program or debug `test`s."
+        },
+        "elideArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Elide flags placed before `program`, for example `[\"--max-mem=512m\"]`."
+        },
+        "host": {
+          "type": "string",
+          "description": "IPv4 address for the DAP listener (`--debugger-host`). Defaults to 127.0.0.1."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Port for the DAP listener (`--debugger-port`). Defaults to a free port."
+        }
+      },
+      "required": ["request"]
+    },
+    {
+      "title": "Attach",
+      "properties": {
+        "request": {
+          "type": "string",
+          "enum": ["attach"],
+          "description": "Connect to a program already started with `elide run --debugger=dap`."
+        },
+        "host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "IPv4 address of the DAP listener. `tcp_connection.host` takes precedence."
+        },
+        "port": {
+          "type": "integer",
+          "default": 4711,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Port of the DAP listener. `tcp_connection.port` takes precedence."
+        }
+      },
+      "required": ["request"]
+    }
+  ]
+}

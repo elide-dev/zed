@@ -1,0 +1,16 @@
+id = "elide"
+name = "Elide"
+version = "0.1.0"
+schema_version = 1
+authors = ["Elide Technologies, Inc."]
+description = "Elide: the elide lsp Java language server and a debugger for JavaScript, TypeScript and Python."
+repository = "https://github.com/elide-dev/zed"
+
+[language_servers.elide]
+name = "Elide"
+languages = ["Java"]
+opt_in_languages = ["Java"]
+
+[debug_adapters.Elide]
+
+[debug_locators.elide]
