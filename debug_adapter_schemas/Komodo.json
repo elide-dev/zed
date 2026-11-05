@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "description": "Komodo Kotlin/JVM debugging over stdio. Uses the launcher and project settings from lsp.elide-komodo. Do not set tcp_connection: attach port identifies the target JVM's JDWP agent, not the adapter.",
+  "properties": {
+    "processId": false,
+    "process_id": false,
+    "pid": false,
+    "sourceRoots": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Additional source directories for JVM source paths, besides the module source roots in the Komodo project manifest."
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Launch JVM",
+      "required": ["request", "mainClass", "classPaths"],
+      "properties": {
+        "request": {
+          "type": "string",
+          "enum": ["launch"],
+          "description": "Start a JVM directly under Komodo's debugger. Compile the classes before launching."
+        },
+        "mainClass": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Fully qualified main class; a top-level Kotlin main in File.kt is typically pkg.FileKt."
+        },
+        "classPaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Compiled class directories and dependency jars for the program."
+        },
+        "vmArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "JVM options for the debuggee, not the Komodo adapter."
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Arguments passed to the program."
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Working directory of the program."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Extra environment variables for the program, not the Komodo adapter."
+        },
+        "javaHome": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "JDK for the program; defaults to the JDK used by the debugger."
+        }
+      }
+    },
+    {
+      "title": "Attach to JDWP",
+      "required": ["request", "port"],
+      "properties": {
+        "request": {
+          "type": "string",
+          "enum": ["attach"],
+          "description": "Start Komodo over stdio and attach it to a running JVM's JDWP agent. PID attach is unsupported."
+        },
+        "hostName": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "default": "127.0.0.1",
+          "description": "Host of the target JVM's JDWP agent."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Target JVM JDWP port, not an adapter transport port."
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30000,
+          "description": "Milliseconds to keep retrying the JDWP connection."
+        }
+      }
+    }
+  ]
+}

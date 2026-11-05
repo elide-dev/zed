@@ -3,14 +3,38 @@ name = "Elide"
 version = "0.1.0"
 schema_version = 1
 authors = ["Elide Technologies, Inc."]
-description = "Elide: the elide lsp Java language server and a debugger for JavaScript, TypeScript and Python."
+description = "Elide Java and Komodo Kotlin language servers, JVM and guest-language debugging, and build-extension snippets."
 repository = "https://github.com/elide-dev/zed"
+snippets = ["snippets/typescript.json", "snippets/tsx.json", "snippets/javascript.json", "snippets/pkl.json"]
 
 [language_servers.elide]
 name = "Elide"
 languages = ["Java"]
 opt_in_languages = ["Java"]
 
+[language_servers.elide-komodo]
+name = "Elide Komodo"
+languages = ["Kotlin"]
+opt_in_languages = ["Kotlin"]
+
 [debug_adapters.Elide]
 
+[debug_adapters.Komodo]
+
 [debug_locators.elide]
+
+# Executable paths are user-configurable; only the read-only discovery commands are allowed.
+[[capabilities]]
+kind = "process:exec"
+command = "*"
+args = ["project", "export", "--format=intellij", "-p", "*"]
+
+[[capabilities]]
+kind = "process:exec"
+command = "*"
+args = ["classpath", "**"]
+
+[[capabilities]]
+kind = "process:exec"
+command = "*"
+args = ["komodo", "resolve", "--json"]
