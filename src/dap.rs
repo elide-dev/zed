@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, net::Ipv4Addr};
+use std::{borrow::Cow, collections::BTreeMap, net::Ipv4Addr};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -50,6 +50,12 @@ pub struct Config {
   pub command: Subcommand,
   #[serde(default)]
   pub elide_args: Vec<String>,
+  #[serde(default)]
+  pub flags: Vec<String>,
+  #[serde(default)]
+  pub options: BTreeMap<String, Value>,
+  #[serde(default)]
+  pub program_args: Vec<String>,
   pub host: Option<String>,
   pub port: Option<u16>,
 }
@@ -97,21 +103,75 @@ pub fn tcp_template(
   })
 }
 
-/// Arguments for `elide`: `<run|test> --debugger=dap --debugger-host=H --debugger-port=P [elideArgs] [program] [args]`.
+/// Keeps CLI options before the program and explicit application arguments behind `--`.
 pub fn launch_args(config: &Config, host: Ipv4Addr, port: u16) -> Result<Vec<String>, String> {
-  if config.command == Subcommand::Run && config.program.is_none() && config.args.is_empty() {
-    return Err("a launch needs `program` (or `args`)".into());
-  }
   let mut out = vec![
     config.command.as_str().to_string(),
     "--debugger=dap".into(),
     format!("--debugger-host={host}"),
     format!("--debugger-port={port}"),
   ];
+  for flag in &config.flags {
+    let flag = flag.trim();
+    if !flag.is_empty() {
+      out.extend(["-f".into(), flag.into()]);
+    }
+  }
+  for (name, value) in &config.options {
+    let name = name.trim();
+    let key = name.trim_start_matches('-');
+    if key.is_empty() {
+      return Err("an Elide option needs a name".into());
+    }
+    if key == "debugger" || key.starts_with("debugger-") {
+      return Err("set the adapter's `host`/`port`, not debugger options".into());
+    }
+    let flag = if name.starts_with('-') {
+      name.to_owned()
+    } else if name.len() == 1 {
+      format!("-{name}")
+    } else {
+      format!("--{name}")
+    };
+    match value {
+      Value::Array(values) => {
+        for value in values {
+          if !value.is_string() && !value.is_number() {
+            return Err(format!("option `{flag}` arrays must contain strings or numbers"));
+          }
+          append_option(&mut out, &flag, value)?;
+        }
+      }
+      value => append_option(&mut out, &flag, value)?,
+    }
+  }
   out.extend(config.elide_args.iter().cloned());
   out.extend(config.program.iter().cloned());
   out.extend(config.args.iter().cloned());
+  if !config.program_args.is_empty() {
+    out.push("--".into());
+    out.extend(config.program_args.iter().cloned());
+  }
   Ok(out)
+}
+
+fn append_option(out: &mut Vec<String>, flag: &str, value: &Value) -> Result<(), String> {
+  let value = match value {
+    Value::Bool(false) => return Ok(()),
+    Value::Bool(true) => {
+      out.push(flag.into());
+      return Ok(());
+    }
+    Value::String(value) => Cow::Borrowed(value.as_str()),
+    Value::Number(value) => Cow::Owned(value.to_string()),
+    _ => return Err(format!("option `{flag}` must contain strings, numbers or booleans")),
+  };
+  if flag.starts_with("--") {
+    out.push(format!("{flag}={value}"));
+  } else {
+    out.extend([flag.into(), value.into_owned()]);
+  }
+  Ok(())
 }
 
 /// Launch spawns `elide` and connects to its DAP listener; attach only connects.
@@ -158,6 +218,9 @@ pub fn scenario(config: DebugConfig) -> Result<DebugScenario, String> {
       let mut c = json!({ "request": "launch", "program": l.program, "args": l.args });
       if let Some(cwd) = l.cwd {
         c["cwd"] = cwd.into();
+      }
+      if let Some(stop) = config.stop_on_entry {
+        c["stopOnEntry"] = stop.into();
       }
       if !l.envs.is_empty() {
         c["env"] = l
@@ -263,7 +326,42 @@ mod tests {
         "--debugger-port=1"
       ]
     );
-    assert!(launch_args(&Config::default(), Ipv4Addr::LOCALHOST, 1).is_err());
+  }
+
+  #[test]
+  fn cli_options_and_application_arguments_stay_separate() {
+    let c = Config::parse(
+      r#"{
+      "program":"app.js", "flags":[" mode=dev ",""],
+      "options":{"no-cache":true,"quiet":false,"limit":["workers=2","fds=40"],"p":"a b"},
+      "programArgs":["--debugger=not-an-elide-flag","a b"]
+    }"#,
+    )
+    .unwrap();
+    assert_eq!(
+      launch_args(&c, Ipv4Addr::LOCALHOST, 9).unwrap(),
+      vec![
+        "run",
+        "--debugger=dap",
+        "--debugger-host=127.0.0.1",
+        "--debugger-port=9",
+        "-f",
+        "mode=dev",
+        "--limit=workers=2",
+        "--limit=fds=40",
+        "--no-cache",
+        "-p",
+        "a b",
+        "app.js",
+        "--",
+        "--debugger=not-an-elide-flag",
+        "a b"
+      ]
+    );
+    let conflicting = Config::parse(r#"{"options":{"--debugger-port":1}}"#).unwrap();
+    assert!(launch_args(&conflicting, Ipv4Addr::LOCALHOST, 9).is_err());
+    let malformed = Config::parse(r#"{"options":{"limit":{}}}"#).unwrap();
+    assert!(launch_args(&malformed, Ipv4Addr::LOCALHOST, 9).is_err());
   }
 
   #[test]
@@ -366,14 +464,14 @@ mod tests {
         args: vec!["1".into()],
         envs: vec![("K".into(), "V".into())],
       }),
-      stop_on_entry: None,
+      stop_on_entry: Some(true),
     })
     .unwrap();
     assert_eq!(s.adapter, ADAPTER);
     let c: Value = serde_json::from_str(&s.config).unwrap();
     assert_eq!(
       c,
-      json!({"request":"launch","program":"app.ts","args":["1"],"cwd":"/w","env":{"K":"V"}})
+      json!({"request":"launch","program":"app.ts","args":["1"],"cwd":"/w","env":{"K":"V"},"stopOnEntry":true})
     );
     Config::parse(&s.config).unwrap();
   }

@@ -12,7 +12,7 @@
         },
         "program": {
           "type": "string",
-          "description": "The JavaScript, TypeScript or Python file to run, relative to `cwd`."
+          "description": "JavaScript, TypeScript or Python file, or manifest script name, relative to cwd. Omit to run the project's default entrypoint."
         },
         "args": {
           "type": "array",
@@ -38,6 +38,30 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Elide flags placed before `program`, for example `[\"--max-mem=512m\"]`."
+        },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Build flags passed as repeated -f NAME[=VALUE]."
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": ["string", "number", "boolean"] },
+              { "type": "array", "items": { "type": ["string", "number"] } }
+            ]
+          },
+          "description": "CLI options: true emits a flag, false omits it, arrays repeat it. Debugger options are reserved; use host and port."
+        },
+        "programArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Application arguments appended after --, separate from Elide options."
+        },
+        "stopOnEntry": {
+          "type": "boolean",
+          "description": "Pause before executing the program. Supported by Elide 1.6.3; older releases may always pause on entry."
         },
         "host": {
           "type": "string",

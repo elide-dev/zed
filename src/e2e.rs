@@ -20,7 +20,7 @@ fn elide() -> Option<String> {
 fn fixture_dir(name: &str) -> PathBuf {
   let dir = std::env::temp_dir().join(format!("zed-elide-e2e-{}-{name}", std::process::id()));
   std::fs::create_dir_all(&dir).unwrap();
-  dir
+  dir.canonicalize().unwrap()
 }
 
 fn free_port() -> u16 {
@@ -128,6 +128,20 @@ impl Dap {
   fn stopped(&mut self) -> Value {
     self.until(|m| m["event"] == "stopped" || m["event"] == "terminated")
   }
+
+  fn breakpoint(&mut self) -> Option<Value> {
+    loop {
+      let event = self.stopped();
+      if event["event"] == "terminated" {
+        return None;
+      }
+      if event["body"]["reason"] == "breakpoint" {
+        return Some(event);
+      }
+      let seq = self.send("continue", json!({"threadId": event["body"]["threadId"]}));
+      self.response(seq);
+    }
+  }
 }
 
 /// Builds the launch exactly as `get_dap_binary` does, runs it, and debugs to a breakpoint.
@@ -182,21 +196,18 @@ fn debug_to_breakpoint(file: &str, source: &str, line: u32, expect_bound: bool) 
   let s = dap.send("configurationDone", json!({}));
   dap.response(s);
 
-  // Elide suspends on entry before the first statement.
-  let first = dap.stopped();
-  assert_eq!(first["event"], "stopped", "{first}");
-  let s = dap.send("continue", json!({"threadId": first["body"]["threadId"]}));
-  dap.response(s);
-  let next = dap.stopped();
+  // Entry-stop defaults differ between Elide versions; the requested breakpoint is the contract.
+  let next = dap.breakpoint();
   if expect_bound {
-    assert_eq!(next["body"]["reason"], "breakpoint", "{next}");
+    assert!(next.is_some(), "program terminated without reaching its breakpoint");
+  }
+  if let Some(next) = next {
     let s = dap.send("stackTrace", json!({"threadId": next["body"]["threadId"]}));
     let frames = dap.response(s);
     let top = &frames["body"]["stackFrames"][0];
     assert_eq!(top["line"], line, "{top}");
     assert!(top["source"]["path"].as_str().unwrap().ends_with(file), "{top}");
-  } else {
-    eprintln!("{file}: after entry stop got {next}");
+    eprintln!("{file}: verified breakpoint at line {line}");
   }
   // Elide may close the socket instead of answering a terminating disconnect.
   dap.send("disconnect", json!({"terminateDebuggee": true}));
@@ -265,9 +276,19 @@ fn locator_task_runs_under_debugger() {
   dap.response(s);
   let s = dap.send("launch", serde_json::from_str(&scenario.config).unwrap());
   dap.response(s);
+  let s = dap.send(
+    "setBreakpoints",
+    json!({
+      "source": {"path": dir.join("app.js").display().to_string()}, "breakpoints": [{"line": 2}]
+    }),
+  );
+  dap.response(s);
   let s = dap.send("configurationDone", json!({}));
   dap.response(s);
-  assert_eq!(dap.stopped()["event"], "stopped");
+  assert!(
+    dap.breakpoint().is_some(),
+    "task program did not stop at its breakpoint"
+  );
   let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -305,9 +326,19 @@ fn dap_attach_running_program() {
   dap.response(s);
   let s = dap.send("attach", serde_json::from_str(&raw).unwrap());
   dap.response(s);
+  let s = dap.send(
+    "setBreakpoints",
+    json!({
+      "source": {"path": dir.join("app.js").display().to_string()}, "breakpoints": [{"line": 2}]
+    }),
+  );
+  dap.response(s);
   let s = dap.send("configurationDone", json!({}));
   dap.response(s);
-  assert_eq!(dap.stopped()["event"], "stopped");
+  assert!(
+    dap.breakpoint().is_some(),
+    "attached program did not stop at its breakpoint"
+  );
   let _ = std::fs::remove_dir_all(&dir);
 }
 

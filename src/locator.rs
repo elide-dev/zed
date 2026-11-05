@@ -52,6 +52,11 @@ fn strip_debugger_flags(args: &[String]) -> Vec<String> {
   let mut it = args.iter();
   while let Some(a) = it.next() {
     match a.as_str() {
+      "--" => {
+        out.push(a.clone());
+        out.extend(it.cloned());
+        break;
+      }
       "--debugger-host" | "--debugger-port" => {
         it.next();
       }
@@ -187,6 +192,12 @@ mod tests {
     )
     .unwrap();
     assert_eq!(config(&s)["args"], json!(["app.js"]));
+  }
+
+  #[test]
+  fn preserves_application_debugger_arguments() {
+    let s = create_scenario(&task("elide", &["run", "app.js", "--", "--debugger-port", "9"]), "app").unwrap();
+    assert_eq!(config(&s)["args"], json!(["app.js", "--", "--debugger-port", "9"]));
   }
 
   #[test]
